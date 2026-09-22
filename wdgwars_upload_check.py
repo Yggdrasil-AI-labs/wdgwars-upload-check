@@ -39,21 +39,32 @@ MAX_RETRIES = 4
 
 
 NO_KEY = """
-No API key found. Pick whichever of these is easiest.
+No API key found, and this window cannot ask you for one.
 
-  1. Put your key in a file called key.txt next to this script.
-     That is all. Run it again.
-
-  2. Or set an environment variable:
-       Windows      set WDGWARS_API_KEY=yourkey
-       Mac / Linux  export WDGWARS_API_KEY=yourkey
-
-  3. Or point at a file yourself:
-       python wdgwars_upload_check.py --key-file path/to/key
+Put your key in a plain text file called key.txt next to this script and
+run it again, or set WDGWARS_API_KEY in your environment.
 
 Get a key from https://wdgwars.pl/profile, under API Keys, by clicking
 "Generate new". The key is shown once, so copy it before leaving the page.
 """.strip()
+
+ASK = """
+First run. You need your WDGWars API key.
+
+  1. Open https://wdgwars.pl/profile and log in.
+  2. Scroll down to API Keys.
+  3. Copy a key you already have, or click "Generate new" to make one.
+     A new key is shown only once, so copy it before leaving the page.
+
+Paste it below and press Enter. It is saved next to this script in
+key.txt so you only do this once. Nothing is sent anywhere but wdgwars.pl.
+To remove it later, run this with --forget, or just delete key.txt.
+""".strip()
+
+
+def key_path():
+    """key.txt beside the script."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "key.txt")
 
 
 def _from_file(path, required):
@@ -69,6 +80,62 @@ def _from_file(path, required):
     sys.exit("key file %s is empty" % path)
 
 
+def save_key(key):
+    path = key_path()
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(key + "\n")
+        if os.name == "posix":
+            os.chmod(path, 0o600)
+    except OSError as exc:
+        print("  could not save the key to %s (%s). It will be used for this "
+              "run only." % (path, exc))
+        return
+    print("  saved to %s. Delete that file, or run with --forget, to remove "
+          "it." % path)
+
+
+def ask_for_key():
+    """Prompt once, then remember. Only when someone is actually there."""
+    if not (sys.stdin and sys.stdin.isatty()):
+        sys.exit(NO_KEY)
+    print()
+    print(ASK)
+    print()
+    try:
+        key = input("API key: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit("cancelled, nothing saved")
+    if not key:
+        sys.exit("no key entered, nothing saved")
+    if len(key) != 64 or any(c not in "0123456789abcdefABCDEF" for c in key):
+        print()
+        print("  Heads up: a WDGWars key is normally 64 characters of 0-9 and "
+              "a-f.")
+        print("  What you pasted is %d character(s). Trying it anyway." %
+              len(key))
+    print()
+    save_key(key)
+    return key
+
+
+def forget_key():
+    path = key_path()
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError as exc:
+            sys.exit("could not delete %s: %s" % (path, exc))
+        print("Deleted %s. Your key is gone from this machine." % path)
+    else:
+        print("No key.txt here, nothing to delete.")
+    print("The key still exists on your account. To retire it for good, "
+          "revoke it at https://wdgwars.pl/profile under API Keys.")
+    print("To remove the tool itself, delete this folder. It installs "
+          "nothing elsewhere.")
+
+
 def read_key(args):
     if args.key_file:
         return _from_file(os.path.expanduser(args.key_file), True)
@@ -77,14 +144,13 @@ def read_key(args):
     if key:
         return key
 
-    # key.txt beside the script, then beside the shell's working directory
-    here = os.path.dirname(os.path.abspath(__file__))
-    for path in (os.path.join(here, "key.txt"), os.path.abspath("key.txt")):
+    # key.txt beside the script, then in the shell's working directory
+    for path in (key_path(), os.path.abspath("key.txt")):
         key = _from_file(path, False)
         if key:
             return key
 
-    sys.exit(NO_KEY)
+    return ask_for_key()
 
 
 def get(path, key):
@@ -225,7 +291,13 @@ def main():
     ap.add_argument("--key-file", help="file holding the API key")
     ap.add_argument("--json", action="store_true",
                     help="dump both raw responses instead of a report")
+    ap.add_argument("--forget", action="store_true",
+                    help="delete the saved key.txt and exit")
     args = ap.parse_args()
+
+    if args.forget:
+        forget_key()
+        return
 
     if not 1 <= args.limit <= 50:
         sys.exit("--limit must be between 1 and 50")

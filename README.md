@@ -17,9 +17,7 @@ It only reads. Nothing is uploaded, nothing is changed, nothing is sent anywhere
 
 **3. Get your API key.** Go to [wdgwars.pl/profile](https://wdgwars.pl/profile) and log in. Scroll down to **API Keys**. Either copy a key you already have, or click **Generate new** to make one. The key is shown only once when generated, so copy it before you leave the page.
 
-**4. Save the key.** Make a new plain text file called `key.txt` in the same folder as `wdgwars_upload_check.py`, paste the key in, save. Nothing else in the file.
-
-**5. Run it.**
+**4. Run it.**
 
 **Windows.** Open the folder holding the script. Hold **Shift**, right-click an empty part of the folder, and choose **Open PowerShell window here** (older Windows says "Open command window here"). Then type:
 
@@ -37,7 +35,17 @@ python3 wdgwars_upload_check.py
 
 or `./run.sh`, which does the same thing.
 
+**5. Paste your key when it asks.** The first run stops and asks for it. Paste, press Enter, and it saves the key to `key.txt` next to the script so you are never asked again. Then it runs.
+
 That is it. No pip, no install, no dependencies.
+
+## Removing it
+
+```
+python wdgwars_upload_check.py --forget
+```
+
+deletes the saved `key.txt`. Deleting the folder removes the tool completely, since it installs nothing anywhere else. Neither of those touches your account, so if you want the key itself retired, revoke it at [wdgwars.pl/profile](https://wdgwars.pl/profile) under API Keys.
 
 ## What you will see
 
@@ -71,6 +79,7 @@ Read the verdict first. If it names your file as uploaded twice, the earlier one
 | `--limit N` | How many past uploads to fetch, 1 to 50. Default 10. Use `--limit 50` if your upload was a while ago. |
 | `--key-file PATH` | Read the key from somewhere other than `key.txt`. |
 | `--json` | Dump the two raw API responses instead of the report. For when you want to read the fields yourself. |
+| `--forget` | Delete the saved `key.txt` and exit. |
 
 You can also set the key as an environment variable instead of using `key.txt`:
 
@@ -90,8 +99,10 @@ on Mac and Linux.
 
 Your key is your account. Treat it like a password.
 
-- This script never prints it, never sends it anywhere except wdgwars.pl, and never writes it down.
+- This script never prints it and never sends it anywhere except wdgwars.pl.
+- It is saved to `key.txt` beside the script, and nowhere else. On Mac and Linux that file is created readable only by you.
 - `key.txt` is in `.gitignore`, so it cannot be committed by accident.
+- `--forget` deletes it whenever you want.
 - Nobody, including whoever is helping you in Discord, needs your key to help you. Run this yourself and share the **output**. If a tool or a person asks you to hand over the key itself, that is the moment to stop and ask in the server first.
 - Revoke and regenerate any key you are unsure about, at [wdgwars.pl/profile](https://wdgwars.pl/profile).
 
