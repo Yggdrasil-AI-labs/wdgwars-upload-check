@@ -163,7 +163,20 @@ def get(path, key):
     for attempt in range(MAX_RETRIES):
         try:
             with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                raw = resp.read().decode("utf-8", "replace")
+            try:
+                return json.loads(raw)
+            except ValueError:
+                # A 200 that is not JSON is the login page or a Cloudflare
+                # challenge, not data. Say so instead of dying on a traceback.
+                if "<html" in raw[:400].lower():
+                    sys.exit(
+                        "wdgwars.pl returned a web page instead of data for "
+                        "%s.\nThat usually means the key was not accepted. "
+                        "Check it at https://wdgwars.pl/profile under API "
+                        "Keys, and that you copied the whole thing." % path)
+                sys.exit("wdgwars.pl returned something that is not JSON for "
+                         "%s: %s" % (path, raw[:200]))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", "replace")
             if exc.code == 429:
@@ -172,6 +185,7 @@ def get(path, key):
                     wait = int(json.loads(body).get("retry_after", 30))
                 except (ValueError, TypeError, AttributeError):
                     pass
+                wait = max(1, min(wait, 120))
                 if attempt == MAX_RETRIES - 1:
                     sys.exit("rate limited and out of retries")
                 print("  rate limited, waiting %ds" % wait, file=sys.stderr)
@@ -228,13 +242,18 @@ def show_history(hist, limit):
         print()
         return
 
-    print("== UPLOAD HISTORY (newest %d) ==" % min(limit, len(uploads)))
+    print("== UPLOAD HISTORY (newest %d) ==" % len(uploads))
     by_file = {}
     capped = []
+    failed = []
+    oldest = None
     for i, up in enumerate(uploads, 1):
         when = up.get("created_at") or up.get("when") or up.get("time") or "?"
         name = up.get("filename") or "(unnamed)"
         size = up.get("file_size")
+        status = up.get("status", "?")
+        if when != "?":
+            oldest = when
         res = up.get("result")
         if isinstance(res, str):
             try:
@@ -248,7 +267,7 @@ def show_history(hist, limit):
         print("      file     %s%s" % (
             name, "  (%s bytes)" % fmt(size) if size is not None else ""))
         print("      via      %s   status %s" % (
-            up.get("endpoint", "?"), up.get("status", "?")))
+            up.get("endpoint", "?"), status))
         shown = [(k, res[k]) for k in COUNTERS if k in res]
         if shown:
             print("      " + "  ".join("%s=%s" % (k, fmt(v)) for k, v in shown))
@@ -257,6 +276,8 @@ def show_history(hist, limit):
 
         if res.get("cap_hits"):
             capped.append(i)
+        if isinstance(status, str) and status.lower() not in ("done", "?"):
+            failed.append((i, status))
 
         # Same filename AND same byte count is the same file, sent twice.
         if size is not None and name != "(unnamed)":
@@ -264,6 +285,19 @@ def show_history(hist, limit):
 
     repeats = {k: v for k, v in by_file.items() if len(v) > 1}
     print("\n== VERDICT ==")
+    print("  This looked at your newest %d upload(s), back to %s." % (
+        len(uploads), oldest or "an unknown date"))
+    if len(uploads) >= limit and limit < 50:
+        print("  That is the whole window you asked for, so there may be "
+              "more before it. Re-run with --limit 50 to look further back.")
+    print()
+
+    if failed:
+        print("  Some uploads did not finish cleanly:")
+        for i, status in failed:
+            print("    entry [%d] status %s" % (i, status))
+        print("  An upload that was rejected or is still in progress has not "
+              "added anything yet, which on its own explains a zero.")
     if repeats:
         print("  The same file appears more than once in this window:")
         for (name, size), idxs in repeats.items():
@@ -273,13 +307,12 @@ def show_history(hist, limit):
               "the same file is all duplicates and zero new, which is the "
               "correct answer rather than a fault.")
     else:
-        print("  No file in this window was uploaded twice, so a repeat "
-              "upload does not explain a zero-new result.")
+        print("  No file in the window above was uploaded twice. If the "
+              "upload you are asking about is not listed, this has not "
+              "ruled anything out yet, so widen the window first.")
     if capped:
         print("  Entries %s recorded cap_hits, meaning new APs were skipped "
               "against the 24h cap." % ", ".join("[%d]" % i for i in capped))
-    print("  Widen the window with --limit 50 if your upload is older than "
-          "what is shown.")
     print()
 
 
